@@ -1,0 +1,66 @@
+name: Release
+
+on:
+  push:
+    branches: [master, r/*]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ${{ matrix.os }}
+    env:
+      GH_RELEASE_VERSION: ${{ needs.upversion.outputs.new_version }}
+    needs: [upversion]
+    strategy:
+      matrix:
+        os: [windows-latest]
+    steps:
+      - uses: actions/checkout@v2
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v1
+        with:
+          dotnet-version: 7.0.x
+
+      - name: Restore dependencies
+        run: dotnet restore
+
+      - name: Build
+        run: |
+          dotnet build --configuration Release --no-restore
+          echo ${{ env.GH_RELEASE_VERSION }} > GameHelper/bin/Release/net5.0/VERSION.txt
+
+      - name: Create Zip For Release
+        uses: papeloto/action-zip@v1
+        with:
+          files: GameHelper/bin/Release/net5.0/
+          dest: release.zip
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v1
+        with:
+          tag_name: ${{ env.GH_RELEASE_VERSION }}
+          name: GameHelper-standard-${{ env.GH_RELEASE_VERSION }}
+          files: release.zip
+          draft: false
+          prerelease: false
+
+  upversion:
+    runs-on: [ubuntu-latest]
+    outputs:
+      new_version: ${{ steps.bump-semver.outputs.new_version }}
+    steps:
+      - uses: actions/checkout@v2
+      - uses: actions-ecosystem/action-get-latest-tag@v1
+        id: get-latest-tag
+        with:
+          semver_only: true
+      - uses: actions-ecosystem/action-bump-semver@v1
+        id: bump-semver
+        with:
+          current_version: ${{ steps.get-latest-tag.outputs.tag }}
+          level: minor
+      - uses: actions-ecosystem/action-push-tag@v1
+        with:
+          tag: ${{ steps.bump-semver.outputs.new_version }}
+          message: "${{ steps.bump-semver.outputs.new_version }}: PR #${{ github.event.pull_request.number }} ${{ github.event.pull_request.title }}"
